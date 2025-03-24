@@ -1,81 +1,148 @@
-clc; clear; close all;
+% Mô phỏng CSMA/CA với phân tích hiệu suất chi tiết
+clear all;
+close all;
 
 % Tham số mô phỏng
-N = 5;              % Số nút trong mạng
-T_sim = 1000;       % Tổng thời gian mô phỏng (đơn vị: slot)
-slot_time = 0.00002; % Thời gian một slot (20us, giống IEEE 802.11)
-IFS = 2;            % Interframe Space (số slot)
-CW_min = 4;         % Kích thước cửa sổ tranh chấp tối thiểu
-CW_max = 32;        % Kích thước cửa sổ tranh chấp tối đa
-packet_duration = 50; % Thời gian truyền một gói tin (số slot)
+nStations = 5;          % Số node/station
+simTime = 2000;        % Thời gian mô phỏng (timeslots)
+backoffMax = 16;       % Giá trị backoff tối đa
+dataSize = 10;         % Kích thước gói tin
+ACK = 2;              % Thời gian ACK
+probTx = 0.3;          % Xác suất tạo gói tin
 
-% Khởi tạo trạng thái
-channel_busy = zeros(1, T_sim); % Trạng thái kênh (0: rảnh, 1: bận)
-backoff = zeros(1, N);          % Thời gian backoff của mỗi nút
-transmitting = zeros(1, N);     % Trạng thái truyền (0: không truyền, 1: truyền)
-success = 0;                    % Số gói tin truyền thành công
-collisions = 0;                 % Số va chạm
+% Khởi tạo biến
+channel = zeros(1, simTime);
+stationState = zeros(nStations, simTime);
+successfulTx = zeros(1, nStations);
+collisions = 0;
+delay = zeros(1, nStations);    % Tổng độ trễ
+packetsSent = zeros(1, nStations); % Số gói tin gửi
+waitingTime = cell(1, nStations); % Lưu thời gian chờ của mỗi gói
 
-% Vòng lặp mô phỏng
-for t = 1:T_sim
-    % Kiểm tra trạng thái kênh tại thời điểm t
-    if sum(transmitting) > 0
-        channel_busy(t) = 1; % Kênh bận nếu có nút đang truyền
-    else
-        channel_busy(t) = 0; % Kênh rảnh
-    end
-    
-    for n = 1:N
-        % Nếu nút không truyền, quyết định truyền
-        if transmitting(n) == 0
-            % Kiểm tra kênh rảnh trong IFS
-            if t > IFS && all(channel_busy(t-IFS:t-1) == 0)
-                % Giảm backoff nếu kênh rảnh
-                if backoff(n) > 0
-                    backoff(n) = backoff(n) - 1;
-                end
-                
-                % Nếu backoff = 0, bắt đầu truyền
-                if backoff(n) == 0
-                    transmitting(n) = packet_duration; % Thời gian truyền gói tin
-                    backoff(n) = randi([0, CW_min]);   % Reset backoff ngẫu nhiên
-                end
-            else
-                % Nếu kênh bận, chọn backoff ngẫu nhiên
-                if backoff(n) == 0
-                    backoff(n) = randi([0, CW_min]);
+% Main simulation loop
+for t = 1:simTime
+    for n = 1:nStations
+        if rand() < probTx && stationState(n,t) == 0
+            % Carrier sensing
+            if t > 1 && channel(t-1) == 0
+                backoff = randi([0 backoffMax]);
+                if t + backoff + dataSize + ACK <= simTime
+                    % Ghi nhận thời gian bắt đầu chờ
+                    startTime = t;
+                    
+                    % Backoff
+                    if backoff > 0
+                        stationState(n,t:t+backoff-1) = 1;
+                    end
+                    
+                    % Kiểm tra va chạm
+                    collision = false;
+                    txStart = t + backoff;
+                    txEnd = txStart + dataSize - 1;
+                    if sum(channel(txStart:txEnd)) > 0
+                        collision = true;
+                        collisions = collisions + 1;
+                        stationState(n,txStart:txEnd) = 4; % Trạng thái va chạm
+                    end
+                    
+                    % Truyền thành công
+                    if ~collision
+                        channel(txStart:txEnd) = 1;
+                        stationState(n,txStart:txEnd) = 2;
+                        channel(txEnd+1:txEnd+ACK) = 1;
+                        stationState(n,txEnd+1:txEnd+ACK) = 3;
+                        successfulTx(n) = successfulTx(n) + 1;
+                        packetsSent(n) = packetsSent(n) + 1;
+                        totalDelay = (txEnd + ACK - startTime);
+                        delay(n) = delay(n) + totalDelay;
+                        waitingTime{n} = [waitingTime{n} totalDelay];
+                    end
                 end
             end
-        else
-            % Đang truyền: giảm thời gian truyền còn lại
-            transmitting(n) = transmitting(n) - 1;
-        end
-    end
-    
-    % Kiểm tra va chạm
-    if sum(transmitting > 0) > 1
-        collisions = collisions + 1; % Có va chạm nếu >1 nút truyền cùng lúc
-    elseif sum(transmitting > 0) == 1
-        if transmitting(find(transmitting > 0)) == 1 % Gói tin vừa truyền xong
-            success = success + 1; % Thành công nếu chỉ 1 nút truyền
         end
     end
 end
 
-% Tính toán kết quả
-throughput = success * packet_duration / T_sim; % Thông lượng (tỷ lệ slot thành công)
-collision_prob = collisions / (success + collisions); % Xác suất va chạm
+% Phân tích hiệu suất
+channelUtilization = sum(channel) / simTime * 100;
+totalCollisions = collisions;
+collisionRate = collisions / sum(packetsSent) * 100;
+throughput = sum(successfulTx) * dataSize / simTime;
+avgDelay = delay ./ successfulTx; % Độ trễ trung bình mỗi station
+fairness = std(successfulTx) / mean(successfulTx); % Chỉ số công bằng
 
 % Hiển thị kết quả
-fprintf('Số gói tin thành công: %d\n', success);
-fprintf('Số va chạm: %d\n', collisions);
-fprintf('Thông lượng: %.4f\n', throughput);
-fprintf('Xác suất va chạm: %.4f\n', collision_prob);
+fprintf('PHÂN TÍCH HIỆU SUẤT:\n');
+fprintf('1. Tỷ lệ sử dụng kênh: %.2f%%\n', channelUtilization);
+fprintf('2. Tổng số va chạm: %d\n', totalCollisions);
+fprintf('3. Tỷ lệ va chạm: %.2f%%\n', collisionRate);
+fprintf('4. Throughput mạng: %.2f (data units/timeslot)\n', throughput);
+fprintf('5. Độ trễ trung bình theo station (timeslots):\n');
+for n = 1:nStations
+    if successfulTx(n) > 0
+        fprintf('   Station %d: %.2f\n', n, avgDelay(n));
+    else
+        fprintf('   Station %d: N/A (không có truyền thành công)\n', n);
+    end
+end
+fprintf('6. Chỉ số công bằng: %.2f (0: rất công bằng, cao: không công bằng)\n', fairness);
+fprintf('7. Số lần truyền thành công theo station:\n');
+for n = 1:nStations
+    fprintf('   Station %d: %d\n', n, successfulTx(n));
+end
 
-% Vẽ trạng thái kênh
-figure;
-plot(channel_busy, 'b-', 'LineWidth', 1.5);
-xlabel('Thời gian (slot)');
-ylabel('Trạng thái kênh (0: rảnh, 1: bận)');
-title('Mô phỏng CSMA/CA');
-grid on;
+% Chuẩn bị nhãn cho boxplot
+groupLabels = [];
+dataToPlot = [];
+for n = 1:nStations
+    if ~isempty(waitingTime{n})
+        dataToPlot = [dataToPlot waitingTime{n}];
+        groupLabels = [groupLabels repmat(n, 1, length(waitingTime{n}))];
+    end
+end
+
+% Vẽ biểu đồ
+figure('Position', [100 100 1000 800]);
+
+subplot(3,2,1);
+plot(channel);
+title('Trạng thái kênh');
+xlabel('Time slots');
+ylabel('Channel State');
+
+subplot(3,2,2);
+imagesc(stationState);
+title('Trạng thái các Station');
+xlabel('Time slots');
+ylabel('Station ID');
+colorbar;
+colormap([1 1 1; 0 1 0; 0 0 1; 1 0 0; 1 0 1]); % Thêm màu tím cho va chạm
+
+subplot(3,2,3);
+bar(successfulTx);
+title('Số lần truyền thành công');
+xlabel('Station ID');
+ylabel('Số gói tin');
+
+subplot(3,2,4);
+bar(avgDelay);
+title('Độ trễ trung bình');
+xlabel('Station ID');
+ylabel('Timeslots');
+
+subplot(3,2,5);
+if ~isempty(dataToPlot)
+    boxplot(dataToPlot, groupLabels);
+    title('Phân bố thời gian chờ');
+    xlabel('Station ID');
+    ylabel('Waiting Time');
+else
+    text(0.5, 0.5, 'Không có dữ liệu thời gian chờ', ...
+        'HorizontalAlignment', 'center');
+    title('Phân bố thời gian chờ');
+end
+
+subplot(3,2,6);
+pie([sum(channel) simTime-sum(channel)]);
+title('Sử dụng kênh');
+legend({'Busy', 'Idle'});
