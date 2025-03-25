@@ -116,7 +116,7 @@ title('Trạng thái các Station');
 xlabel('Time slots');
 ylabel('Station ID');
 colorbar;
-colormap([1 1 1; 0 1 0; 0 0 1; 1 0 0; 1 0 1]); % Màu trắng: channel rảnh, màu xanh: đợi backoff, màu xanh dương: , màu đỏ: đợi ACK, màu tím: va chạm
+colormap([1 1 1; 0 1 0; 0 0 1; 1 0 0; 1 0 1]); % Màu trắng: channel rảnh, màu xanh: đợi backoff, màu xanh dương: Tx, màu đỏ: đợi ACK, màu tím: va chạm
 
 subplot(3,2,3);
 bar(successfulTx);
