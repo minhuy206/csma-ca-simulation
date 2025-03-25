@@ -116,7 +116,7 @@ title('Trạng thái các Station');
 xlabel('Time slots');
 ylabel('Station ID');
 colorbar;
-colormap([1 1 1; 0 1 0; 0 0 1; 1 0 0; 1 0 1]); % Thêm màu tím cho va chạm
+colormap([1 1 1; 0 1 0; 0 0 1; 1 0 0; 1 0 1]); % Màu trắng: channel rảnh, màu xanh: đợi backoff, màu xanh dương: , màu đỏ: đợi ACK, màu tím: va chạm
 
 subplot(3,2,3);
 bar(successfulTx);
@@ -131,18 +131,6 @@ xlabel('Station ID');
 ylabel('Timeslots');
 
 subplot(3,2,5);
-if ~isempty(dataToPlot)
-    boxplot(dataToPlot, groupLabels);
-    title('Phân bố thời gian chờ');
-    xlabel('Station ID');
-    ylabel('Waiting Time');
-else
-    text(0.5, 0.5, 'Không có dữ liệu thời gian chờ', ...
-        'HorizontalAlignment', 'center');
-    title('Phân bố thời gian chờ');
-end
-
-subplot(3,2,6);
 pie([sum(channel) simTime-sum(channel)]);
 title('Sử dụng kênh');
 legend({'Busy', 'Idle'});
